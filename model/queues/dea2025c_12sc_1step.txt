@@ -1,0 +1,19 @@
+# dea2025c (corrected cost inputs, 2026-09-18): the conference paper's 12sc single-step sensitivities,
+# genset count enumerated as for their dea2025 originals. The base 1-step design is not here: its
+# inputs equal the certified _costall run (2 units, 10,953,983.08 USD). g24h also gets 4 units, as
+# before, because its median path is higher.
+gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025c_dr10     2
+gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025c_dr10     3
+gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025c_dr08     2
+gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025c_dr08     3
+gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025c_aut0     2
+gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025c_aut0     3
+gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025c_aut2     2
+gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025c_aut2     3
+gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025c_fuel064  2
+gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025c_fuel064  3
+gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025c_fuel107  2
+gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025c_fuel107  3
+gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025c_g24h     2
+gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025c_g24h     3
+gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025c_g24h     4

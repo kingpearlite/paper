@@ -1,0 +1,9 @@
+# dea2025c (corrected cost inputs, 2026-09-18): the 12sc staged designs, genset pattern per step
+# (cumulative units). 3-step: the four monotone patterns from 2 to 3 units, as in 12sc_gensets_2to3.
+# 5-step: all-2 first; other 5-step patterns are added afterwards with the all-2 objective as the
+# cutoff (the 12sc_gensets_trimmed approach), since the 5-step solves are the slowest.
+gili_ketapang_12sc_20y_MILP_3step_dieselops_dea2025c  2,2,2
+gili_ketapang_12sc_20y_MILP_3step_dieselops_dea2025c  2,2,3
+gili_ketapang_12sc_20y_MILP_3step_dieselops_dea2025c  2,3,3
+gili_ketapang_12sc_20y_MILP_3step_dieselops_dea2025c  3,3,3
+gili_ketapang_12sc_20y_MILP_5step_dieselops_dea2025c  2,2,2,2,2

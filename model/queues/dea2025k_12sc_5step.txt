@@ -1,0 +1,8 @@
+# dea2025k (2026-09-24): the 12sc 5-step design, started beside the remaining lanes. The session total
+# never passed 182 GB with four 1-step lanes, and the dea2025c 5-step runs peaked at 66.7 GB RSS in
+# sizing (MemLimit 100, SoftMemLimit 90; stopped by the time limit, not memory) and 56.6 GB in
+# certification. Its sizing ends at the time limit, and its incumbent (exported by
+# LINOPY_EXPORT_SUBOPTIMAL) is certified.
+# Run with: bash run_linopy_lanes.sh queues/dea2025k_12sc_5step.txt --memlimit 120 --softmem 110 \
+#     --threads 8 --size-timelimit 15000
+F  gili_ketapang_12sc_20y_MILP_5step_dieselops_dea2025k             2,2,2,2,2

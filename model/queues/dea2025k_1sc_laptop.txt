@@ -1,0 +1,15 @@
+# dea2025k (2026-09-24): the 1sc designs, on the laptop, one lane (the 2026-09-18 size_and_cert batch
+# settings). Genset count free, as for every 1sc design; aut0 certified with the parallel-unit commitment.
+# Run with: PYTHON=/c/Users/<user>/miniconda3/envs/mgpy/python.exe bash run_linopy_lanes.sh \
+#     queues/dea2025k_1sc_laptop.txt --memlimit 20 --softmem 18 --threads 6 --size-timelimit 7200 \
+#     --cert-timelimit 7200 --foreground
+L  gili_ketapang_1sc_20y_MILP_1step_dieselops_dea2025k           -   LINOPY_INTEGRAL_MIPGAP=0.001
+L  gili_ketapang_1sc_20y_MILP_1step_dieselops_dea2025k_dr10      -   LINOPY_INTEGRAL_MIPGAP=0.001
+L  gili_ketapang_1sc_20y_MILP_1step_dieselops_dea2025k_dr08      -   LINOPY_INTEGRAL_MIPGAP=0.001
+L  gili_ketapang_1sc_20y_MILP_1step_dieselops_dea2025k_aut2      -   LINOPY_INTEGRAL_MIPGAP=0.001
+L  gili_ketapang_1sc_20y_MILP_1step_dieselops_dea2025k_fuel064   -   LINOPY_INTEGRAL_MIPGAP=0.001
+L  gili_ketapang_1sc_20y_MILP_1step_dieselops_dea2025k_fuel107   -   LINOPY_INTEGRAL_MIPGAP=0.001
+L  gili_ketapang_1sc_20y_MILP_1step_dieselops_dea2025k_g24h      -   LINOPY_INTEGRAL_MIPGAP=0.001
+L  gili_ketapang_1sc_20y_MILP_1step_dieselops_dea2025k_aut0      -   LINOPY_INTEGRAL_MIPGAP=0.001 LINOPY_GEN_PARALLEL=1
+L  gili_ketapang_1sc_20y_MILP_3step_dieselops_dea2025k           -   LINOPY_INTEGRAL_MIPGAP=0.001
+L  gili_ketapang_1sc_20y_MILP_5step_dieselops_dea2025k           -   LINOPY_INTEGRAL_MIPGAP=0.001

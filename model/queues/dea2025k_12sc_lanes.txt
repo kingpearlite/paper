@@ -1,0 +1,18 @@
+# dea2025k (2026-09-24): the 12sc 1-step designs on the rebuilt demand, three lanes at a time on HPC.
+# Run with: bash run_linopy_lanes.sh queues/dea2025k_12sc_lanes.txt --memlimit 100 --softmem 90 --threads 8
+# (325 GB session; three lanes at 100 GB). The paper's designs come first in each lane, the review's
+# AWO-002 sensitivities after them. Genset counts: 2, the winner of every dea2025c design here; fuel064
+# (3 won) and aut0 (3 units) are in dea2025k_12sc_big.txt with the staged designs.
+A  gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025k             2
+A  gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025k_dr10        2
+A  gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025k_dr08        2
+A  gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025k_tailpvmin   2
+A  gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025k_tailpvp25   2
+B  gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025k_aut2        2
+B  gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025k_fuel107     2
+B  gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025k_tailq25     2
+B  gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025k_tailpvp50   2
+B  gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025k_tailpvmax   2
+C  gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025k_g24h        2
+C  gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025k_tailq75     2
+C  gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025k_tailpvp75   2

@@ -1,5 +1,5 @@
-"""Builds the merged Gili Ketapang demand/PV scenario inputs (2026-09-11),
-combining two companion studies instead of an earlier one-month Markov-chain demand:
+"""Builds the merged Gili Ketapang demand/PV scenario inputs for the paper update (2026-09-11),
+combining two companion studies instead of the paper's earlier one-month Markov-chain demand:
 
   * Load Forecasting study (<workdir>/Load Forecasting, metodologi_rekonstruksi_beban.tex):
     daily-shape extraction p(h,tau) from the genset log (Dec 2024 + Apr-Aug 2026, outage hours
@@ -69,6 +69,37 @@ the ensemble's. It exists to quantify what the stratum costs and buys across the
 distribution; the summary JSON's peak_y20_percentiles_kw then describes a K-scenario set. Outputs are
 named K instead of K+1, so pair it with a suffix to leave the shipped files alone:
     MGPY_TAIL_STRATUM=0 MGPY_MERGED_SUFFIX=_notail C:/Users/<user>/miniconda3/python.exe _build_demand_merged.py
+
+Demand level, tail rule and feature fix (2026-09-24, the dea2025k re-run). Four switches, each defaulting
+to the behaviour above, so every earlier build still reproduces:
+  * MGPY_LEVEL_SOURCE=kwh -- the level comes from the daily kWh production of Cummins 2 + 3 in the
+    monthly PLTD reports (LF_DIR/load data/produksi_kwh_harian.csv, meter-consistent on all 365 days),
+    not from the daily Siang/Malam kW readings, 91 of whose 365 days are template copies and whose
+    level sat 6.7% below the recorded production. Backbone m(t) = p(h,tau) * Ebar(month, tau) / 24,
+    with Ebar the mean daily kWh of that month and day type; the residual pool is normalised once
+    (per-window normalisation would move the daily energy off the record), and the year-1 check is
+    the weighted monthly energy against the backbone's.
+  * MGPY_TAKSR_DEV -- the sixth TAKSR feature: signed (default, np.mean(x - ens_mean), which is
+    x.mean() minus a constant and so counts the mean twice after z-scoring), abs (the mean ABSOLUTE
+    deviation from the ensemble mean, the intended feature; used for dea2025k) or drop (left out).
+  * MGPY_TAIL_RULE -- the upper-tail representative: peak_median (default: median 20-year peak),
+    growth_medoid (nearest the stratum's mean on the moments the weights are calibrated to -- the
+    20 annual energies and the 20-year peak, z-scored within the stratum and balanced like the TAKSR
+    groups; used for dea2025k), peak_energy (nearest the stratum's median 20-year peak and median
+    20-year energy; tried and not used), or peak_q25 / peak_q75 (the stratum members at those
+    20-year-peak quantiles, the tail-representative sensitivity of the review's AWO-002 A). Why: the
+    median-peak member can sit far out in energy, and a 7% level change swapped it (member 173 ->
+    122) for one costing 19% more; peak_energy also swapped (188 -> 150), growth_medoid picks 122
+    under both level sources and both growth fits.
+  * MGPY_TAIL_PV_REPAIR=1 -- also writes five RES files in which the tail scenario's PV year is
+    replaced by the PV member at the min / P25 / P50 / P75 / max annual yield (AWO-002 B). Demand
+    and weights are unchanged, since the weights are fitted to demand moments only.
+The dea2025k inputs (Code/Inputs/_build_dea2025k_family.py reads them) are built with
+    S="MGPY_LEVEL_SOURCE=kwh MGPY_TAKSR_DEV=abs"; PY=C:/Users/<user>/miniconda3/python.exe
+    env $S MGPY_TAIL_RULE=growth_medoid MGPY_TAIL_PV_REPAIR=1 MGPY_MERGED_SUFFIX=_kwh $PY _build_demand_merged.py
+    env $S MGPY_TAIL_RULE=growth_medoid MGPY_GROWTH_FIRST_YEAR=2018 MGPY_MERGED_SUFFIX=_kwh_g24h $PY _build_demand_merged.py
+    env $S MGPY_TAIL_RULE=peak_q25 MGPY_MERGED_SUFFIX=_kwh_tailq25 $PY _build_demand_merged.py
+    env $S MGPY_TAIL_RULE=peak_q75 MGPY_MERGED_SUFFIX=_kwh_tailq75 $PY _build_demand_merged.py
 """
 import json
 import os
@@ -110,6 +141,20 @@ SEED = 20260911
 TEMPLATE_DAT = "Parameters_9sc_20y_gili_ketapang_capexp5_MILP_dieselops.dat"
 GROWTH_FIRST_YEAR = os.environ.get("MGPY_GROWTH_FIRST_YEAR")
 SUFFIX = os.environ.get("MGPY_MERGED_SUFFIX", "")
+LEVEL_SOURCE = os.environ.get("MGPY_LEVEL_SOURCE", "readings")   # readings | kwh (see the docstring)
+TAKSR_DEV = os.environ.get("MGPY_TAKSR_DEV", "signed")          # signed | abs | drop (see the docstring)
+TAIL_RULE = os.environ.get("MGPY_TAIL_RULE", "peak_median")
+TAIL_PV_REPAIR = os.environ.get("MGPY_TAIL_PV_REPAIR", "0") == "1"
+TAIL_RULES = ("peak_median", "peak_energy", "growth_medoid", "peak_q25", "peak_q75")
+PV_REPAIR_QUANTILES = {"min": 0.0, "p25": 0.25, "p50": 0.5, "p75": 0.75, "max": 1.0}  # of annual PV yield
+if TAKSR_DEV not in ("signed", "abs", "drop"):
+    sys.exit(f"MGPY_TAKSR_DEV must be signed, abs or drop, got {TAKSR_DEV!r}")
+if LEVEL_SOURCE not in ("readings", "kwh"):
+    sys.exit(f"MGPY_LEVEL_SOURCE must be readings or kwh, got {LEVEL_SOURCE!r}")
+if TAIL_RULE not in TAIL_RULES:
+    sys.exit(f"MGPY_TAIL_RULE must be one of {TAIL_RULES}, got {TAIL_RULE!r}")
+if (TAIL_PV_REPAIR or TAIL_RULE != "peak_median") and not TAIL_STRATUM:
+    sys.exit("MGPY_TAIL_RULE / MGPY_TAIL_PV_REPAIR need the upper-tail stratum (MGPY_TAIL_STRATUM=1)")
 
 OUT = {
     "demand_prob": f"Demand_{N_PROB}sc_20y_gili_ketapang_merged{SUFFIX}.csv",
@@ -118,6 +163,9 @@ OUT = {
     "res_det": f"RES_Time_Series_1sc_gili_ketapang_merged{SUFFIX}.csv",
     "summary": f"merged_scenarios_gili_ketapang{SUFFIX}.json",
 }
+if TAIL_PV_REPAIR:
+    OUT.update({f"res_tailpv_{k}": f"RES_Time_Series_{N_PROB}sc_gili_ketapang_merged{SUFFIX}_tailpv{k}.csv"
+                for k in PV_REPAIR_QUANTILES})
 
 
 def dat_indexed_value(path, name):
@@ -158,21 +206,61 @@ def load_genset_log_rounded(path):
     return load_kw.to_frame("load_kw")
 
 
+def kwh_levels(path):
+    """Mean daily kWh (Cummins 2 + 3) per calendar month and day type, from ekstrak_produksi_harian.py."""
+    d = pd.read_csv(path, parse_dates=["date"])
+    d["kwh"] = d["prod_c2_kwh"].fillna(0) + d["prod_c3_kwh"].fillna(0)
+    d["tau"] = np.where(d["date"].dt.dayofweek >= 5, "weekend", "weekday")
+    lv = d.groupby([d["date"].dt.month, "tau"])["kwh"].mean()
+    return {(int(m), t): float(v) for (m, t), v in lv.items()}
+
+
 def backbone(index, shape, targets):
-    """Load Forecasting Eq. 4, vectorised: p(h,tau) * target / pbar(window, tau)."""
+    """Load Forecasting Eq. 4, vectorised: p(h,tau) * target / pbar(window, tau). With
+    MGPY_LEVEL_SOURCE=kwh the targets are mean daily kWh per (month, day type) and the backbone is
+    p(h,tau) * level / 24 (p has a daily mean of 1, so each day carries the recorded mean energy)."""
     tau = np.where(index.dayofweek >= 5, "weekend", "weekday")
     hour = index.hour.values
+    p = np.array([shape.at[h, t] for h, t in zip(hour, tau)])
+    if LEVEL_SOURCE == "kwh":
+        lvl = np.array([targets[(m, t)] for m, t in zip(index.month, tau)])
+        return p * lvl / 24.0
     wbp = np.isin(hour, rb.WBP_HOURS)
     pbar = {"WBP": shape.loc[rb.WBP_HOURS].mean(), "LWBP": shape.loc[rb.LWBP_HOURS].mean()}
-    p = np.array([shape.at[h, t] for h, t in zip(hour, tau)])
     tgt = np.array([targets[m]["WBP" if w else "LWBP"] for m, w in zip(index.month, wbp)])
     pb = np.array([pbar["WBP" if w else "LWBP"][t] for w, t in zip(wbp, tau)])
     return p * tgt / pb
 
 
 def taksr_features(x, day_mask, ens_mean):
-    return [x.mean(), x.std(), x.min(), x.max() - x.min(),
-            x[day_mask].mean() - x[~day_mask].mean(), np.mean(x - ens_mean)]
+    # np.mean(x - ens_mean) is x.mean() minus a constant, a duplicate of the first feature after
+    # z-scoring; MGPY_TAKSR_DEV=abs uses the mean absolute deviation instead, =drop leaves it out.
+    f = [x.mean(), x.std(), x.min(), x.max() - x.min(), x[day_mask].mean() - x[~day_mask].mean()]
+    if TAKSR_DEV == "drop":
+        return f
+    return f + [np.mean(np.abs(x - ens_mean)) if TAKSR_DEV == "abs" else np.mean(x - ens_mean)]
+
+
+def pick_tail(members, peak20, energy_y):
+    """Upper-tail representative under TAIL_RULE; members are the stratum's indices."""
+    by_peak = members[np.argsort(peak20[members])]
+    if TAIL_RULE == "peak_median":
+        return int(by_peak[(len(by_peak) - 1) // 2])
+    if TAIL_RULE in ("peak_q25", "peak_q75"):
+        q = 0.25 if TAIL_RULE == "peak_q25" else 0.75
+        return int(by_peak[int(round(q * (len(by_peak) - 1)))])
+    if TAIL_RULE == "growth_medoid":
+        # Nearest the stratum's MEAN on the moments the weights are calibrated to (the 20 annual
+        # energies and the 20-year peak), z-scored within the stratum and balanced like the TAKSR
+        # groups (energy block / sqrt(20), peak / 1), so the fixed-weight tail carries its stratum's
+        # mean demand path into the weight calibration.
+        e = energy_y[members]
+        ze = (e - e.mean(axis=0)) / e.std(axis=0) / np.sqrt(e.shape[1])
+        zp = (peak20[members] - peak20[members].mean()) / peak20[members].std()
+        return int(members[np.argmin(np.hypot(np.linalg.norm(ze, axis=1), zp))])
+    pk, en = peak20[members], energy_y[members].sum(axis=1)
+    dist = np.hypot((pk - np.median(pk)) / pk.std(), (en - np.median(en)) / en.std())
+    return int(members[np.argmin(dist)])
 
 
 def window_means(series_kw, index):
@@ -205,7 +293,9 @@ def calibrate_weights(w0, moments, targets, w_min, lam, fixed=()):
 def weighted_quantile(values, weights, q):
     order = np.argsort(values)
     cum = np.cumsum(weights[order])
-    return float(values[order][np.searchsorted(cum, q * cum[-1])])
+    # The tolerance keeps a cumulative weight that reaches q exactly (the body's 0.90 below the 0.10
+    # tail) on the lower value; without it 6-decimal rounding decided which side P90 fell on.
+    return float(values[order][np.searchsorted(cum, q * cum[-1] - 1e-9)])
 
 
 def main():
@@ -221,7 +311,12 @@ def main():
     # ---- 1. backbone (Load Forecasting study) ----
     df_all = load_genset_log_rounded(os.path.join(LF_DIR, "load data", "harian_gilket_gabungan.csv"))
     shape = rb.extract_daily_shape(df_all)
-    targets = rb.build_monthly_targets_from_daily(os.path.join(LF_DIR, "load data", "beban_puncak_harian.csv"))
+    if LEVEL_SOURCE == "kwh":
+        targets = kwh_levels(os.path.join(LF_DIR, "load data", "produksi_kwh_harian.csv"))
+        print(f"Level: daily kWh production (Cummins 2 + 3), mean {np.mean(list(targets.values())):.0f} kWh/day "
+              f"over the 24 month x day-type cells")
+    else:
+        targets = rb.build_monthly_targets_from_daily(os.path.join(LF_DIR, "load data", "beban_puncak_harian.csv"))
     peaks = (rb.ANNUAL_PEAK if GROWTH_FIRST_YEAR is None
              else {y: v for y, v in rb.ANNUAL_PEAK.items() if y >= int(GROWTH_FIRST_YEAR)})
     g_yoy = rb.compute_yoy_growth_rates(peaks)
@@ -245,12 +340,19 @@ def main():
     for name, mask in (("WBP", gwbp), ("LWBP", ~gwbp)):
         valid = mask & ~np.isnan(ratio)
         raw_bias[name] = float(np.nanmean(ratio[valid]))
-        ratio[valid] = ratio[valid] / raw_bias[name]
+        if LEVEL_SOURCE == "readings":
+            ratio[valid] = ratio[valid] / raw_bias[name]
+    if LEVEL_SOURCE == "kwh":
+        # One normalisation over the whole pool keeps the daily-energy anchor; per window it would
+        # move the energy off the record. The per-window biases stay as diagnostics.
+        raw_bias["all"] = float(np.nanmean(ratio))
+        ratio = ratio / raw_bias["all"]
     n_missing = int(np.isnan(ratio).sum())
     ratio = np.where(np.isnan(ratio), 1.0, ratio)
     pools = aligned_start_pools(gidx.hour.values, grid["segment"].values, LOAD_BLOCK)
+    norm = (f"all {raw_bias['all']:.3f} (normalised out once)" if LEVEL_SOURCE == "kwh" else "(normalised out)")
     print(f"Residual pool: {len(grid)} h in {grid['segment'].nunique()} segment(s), {n_missing} missing -> r=1; "
-          f"raw measured/target bias WBP {raw_bias['WBP']:.3f}, LWBP {raw_bias['LWBP']:.3f} (normalised out)")
+          f"raw measured/target bias WBP {raw_bias['WBP']:.3f}, LWBP {raw_bias['LWBP']:.3f} {norm}")
 
     # ---- 3. growth paths + per-year regenerated load ----
     rng_g = np.random.default_rng([SEED, 1])
@@ -286,7 +388,7 @@ def main():
     y1 = load[:, 0, :]
     ens_load, ens_pv = y1.mean(axis=0), pv_per_kw.mean(axis=0)
     energy_y = load.sum(axis=2) / 1e3  # MWh, (member, year)
-    base = ("mean", "std", "min", "range", "day_night", "dev")
+    base = ("mean", "std", "min", "range", "day_night") + (() if TAKSR_DEV == "drop" else ("dev",))
     groups = {
         "load_texture": ([f"load_{n}" for n in base],
                          np.array([taksr_features(y1[i], day_mask, ens_load) for i in range(N_MEMBERS)])),
@@ -328,12 +430,15 @@ def main():
         members = body[labels == k]
         reps.append(int(members[np.argmin(np.linalg.norm(z[members] - km.cluster_centers_[k], axis=1))]))
         weights.append(len(members) / N_MEMBERS)
-    # The tail is represented by its conditional median on the quantity that defines it: the
-    # stratum member with the median 20-year peak. (Nearest-centroid in the full feature space
-    # picked the ensemble's most extreme member, 2,329 kW, in the fifth build.)
+    # The tail is represented by one stratum member chosen by TAIL_RULE (pick_tail). The default is
+    # its conditional median on the quantity that defines it, the median 20-year peak.
+    # (Nearest-centroid in the full feature space picked the ensemble's most extreme member,
+    # 2,329 kW, in the fifth build.)
     if TAIL_STRATUM:
-        by_peak = tail_members[np.argsort(peak20[tail_members])]
-        tail_rep = int(by_peak[(len(by_peak) - 1) // 2])
+        energy20 = energy_y.sum(axis=1)
+        tail_rep = pick_tail(tail_members, peak20, energy_y)
+        tail_peak_rank = int((peak20[tail_members] < peak20[tail_rep]).sum()) + 1     # 1 = lowest in the stratum
+        tail_energy_rank = int((energy20[tail_members] < energy20[tail_rep]).sum()) + 1
         reps.append(tail_rep)
         weights.append(len(tail_members) / N_MEMBERS)
     order = np.argsort([energy_y[r, -1] for r in reps])  # scenario 1 = lowest year-20 energy
@@ -352,7 +457,8 @@ def main():
     if TAIL_STRATUM:
         print(f"Upper tail: {len(tail_members)} members with 20-year peak >= {np.quantile(peak20, TAIL_QUANTILE):.0f} kW "
               f"-> scenario {tail_pos + 1} (member {tail_rep}, peak {peak20[tail_rep]:.0f} kW, "
-              f"weight {weights[tail_pos]:.3f})")
+              f"weight {weights[tail_pos]:.3f}); rule {TAIL_RULE}: rank {tail_peak_rank} by 20-year peak and "
+              f"{tail_energy_rank} by 20-year energy ({energy20[tail_rep]:.0f} MWh) of {len(tail_members)}")
     else:
         print(f"Upper tail: disabled (MGPY_TAIL_STRATUM=0); all {N_MEMBERS} members reduced to K={K} scenarios")
 
@@ -365,9 +471,16 @@ def main():
     det_pv_member = int(np.argsort(pv_energy)[N_MEMBERS // 2])
 
     # ---- verification ----
-    tgt = pd.Series({(m, w): targets[m][w] for m in range(1, 13) for w in ("WBP", "LWBP")})
-    wm_y1 = sum(w * window_means(load[r, 0], idx) for r, w in zip(reps, weights))
-    mape_y1 = float((abs(wm_y1 - tgt.reindex(wm_y1.index)) / tgt.reindex(wm_y1.index)).mean() * 100)
+    if LEVEL_SOURCE == "kwh":  # the level is energy, so compare monthly energy with the backbone's
+        tgt = pd.Series(m_year, index=idx).groupby(idx.month).sum()
+        wm_y1 = sum(w * pd.Series(load[r, 0], index=idx).groupby(idx.month).sum() for r, w in zip(reps, weights))
+        mape_y1 = float((abs(wm_y1 - tgt) / tgt).mean() * 100)
+        mape_basis = "monthly energy vs backbone"
+    else:
+        tgt = pd.Series({(m, w): targets[m][w] for m in range(1, 13) for w in ("WBP", "LWBP")})
+        wm_y1 = sum(w * window_means(load[r, 0], idx) for r, w in zip(reps, weights))
+        mape_y1 = float((abs(wm_y1 - tgt.reindex(wm_y1.index)) / tgt.reindex(wm_y1.index)).mean() * 100)
+        mape_basis = "window means vs targets"
     peak_y = load.max(axis=2)
     peak_pct = {q: {"ensemble": float(np.percentile(peak_y[:, -1], q)),
                     "reduced": weighted_quantile(peak_y[reps, -1], weights, q / 100)} for q in (10, 50, 90, 95)}
@@ -377,11 +490,14 @@ def main():
     print(f"Weights: cluster {np.round(weights_cluster, 3).tolist()} -> calibrated {weights.tolist()}")
     print(f"Annual-energy error vs ensemble, all 20 years: calibrated max |{np.abs(e_err).max():.2f}|%, "
           f"cluster-size max |{np.abs(100 * (e_red_cluster / e_full - 1)).max():.2f}|%")
-    print(f"Year-1 weighted window means vs targets: MAPE {mape_y1:.2f}%")
+    print(f"Year-1 weighted {mape_basis}: MAPE {mape_y1:.2f}%")
     print("Year-20 peak kW (ensemble / reduced): " + ", ".join(
         f"P{q} {v['ensemble']:.0f}/{v['reduced']:.0f}" for q, v in peak_pct.items()))
     print(f"Mean annual energy, reduced vs full: y1 {e_red[0]:.1f}/{e_full[0]:.1f} MWh, "
           f"y20 {e_red[-1]:.1f}/{e_full[-1]:.1f} MWh")
+    # The 21st calibrated moment (2026-09-25; diagnostic only, nothing it prints feeds an output file).
+    p_full, p_red = float(peak20.mean()), float(np.average(peak20[reps], weights=weights))
+    print(f"Mean 20-year peak, reduced vs full: {p_red:.1f}/{p_full:.1f} kW ({100 * (p_red / p_full - 1):+.2f}%)")
     print(f"Deterministic: peak y1 {det_load[0].max():.0f} kW, y20 {det_load[-1].max():.0f} kW, "
           f"energy y1 {det_load[0].sum() / 1e3:.1f} MWh, y20 {det_load[-1].sum() / 1e3:.1f} MWh; "
           f"PV member {det_pv_member} ({pv_energy[det_pv_member]:.1f} kWh/kW)")
@@ -399,6 +515,17 @@ def main():
     res_frame(pv_per_kw[reps]).to_csv(paths["res_prob"])
     demand_frame(det_load[None]).to_csv(paths["demand_det"], sep=";", decimal=",", index=True, index_label="")
     res_frame(pv_per_kw[[det_pv_member]]).to_csv(paths["res_det"])
+    pv_repairs = {}
+    if TAIL_PV_REPAIR:  # AWO-002 B: the tail scenario's load with another member's PV year
+        by_yield = np.argsort(pv_energy)
+        for k, q in PV_REPAIR_QUANTILES.items():
+            m = int(by_yield[int(round(q * (N_MEMBERS - 1)))])
+            pv = pv_per_kw[reps].copy()
+            pv[tail_pos] = pv_per_kw[m]
+            res_frame(pv).to_csv(paths[f"res_tailpv_{k}"])
+            pv_repairs[k] = {"pv_member": m, "pv_kwh_per_kw": float(pv_energy[m]), "res": OUT[f"res_tailpv_{k}"]}
+        print(f"Tail PV re-pairings (tail's own PV member {tail_rep}, {pv_energy[tail_rep]:.1f} kWh/kW): " + ", ".join(
+            f"{k} member {v['pv_member']} ({v['pv_kwh_per_kw']:.1f})" for k, v in pv_repairs.items()))
 
     summary = {
         "built": pd.Timestamp.now().isoformat(timespec="seconds"),
@@ -407,7 +534,8 @@ def main():
         "settings": {"n_members": N_MEMBERS, "n_years": N_YEARS, "K": K, "year": YEAR, "load_block_h": LOAD_BLOCK,
                      "pv_block_h": PV_BLOCK, "pv_pdc_kw": PV_PDC_KW, "seed": SEED, "mu_g": mu_g, "sigma_g": sigma_g,
                      "growth_peak_years": [min(peaks), max(peaks)], "growth_yoy": [float(v) for v in g_yoy],
-                     "res_unit_kw": res_unit_kw, "res_inverter_eff": res_inv_eff},
+                     "res_unit_kw": res_unit_kw, "res_inverter_eff": res_inv_eff,
+                     "level_source": LEVEL_SOURCE, "taksr_dev": TAKSR_DEV, "tail_rule": TAIL_RULE},
         "probabilistic": {"scenario_weights": [round(float(w), 6) for w in weights],
                           "cluster_size_weights": [round(float(w), 6) for w in weights_cluster],
                           "calibrated_moments": [f"energy_y{y}" for y in range(1, N_YEARS + 1)] + ["peak_20y"],
@@ -423,20 +551,25 @@ def main():
                           "upper_tail": ({"quantile": TAIL_QUANTILE, "n_members": int(len(tail_members)),
                                           "scenario": tail_pos + 1, "member": tail_rep,
                                           "peak_20y_kw": float(peak20[tail_rep]),
-                                          "weight": float(weights[tail_pos])} if TAIL_STRATUM
+                                          "weight": float(weights[tail_pos]), "rule": TAIL_RULE,
+                                          "energy_20y_mwh": float(energy20[tail_rep]),
+                                          "peak_rank": tail_peak_rank, "energy_rank": tail_energy_rank,
+                                          "tail_pv_repairs": pv_repairs} if TAIL_STRATUM
                                          else {"enabled": False})},
         "deterministic": {"growth_factor_p50": [float(v) for v in factor_p50], "pv_member": det_pv_member,
                           "max_hourly_load_kw": float(det_load.max()),
                           "max_daily_energy_kwh": float(det_load.reshape(N_YEARS, 365, 24).sum(axis=2).max())},
         "diagnostics": {"raw_measured_over_target_bias": raw_bias, "year1_weighted_window_mape_pct": mape_y1,
+                        "year1_mape_basis": mape_basis,
                         "pv_kwh_per_kw_mean": float(pv_energy.mean()),
                         "energy_mean_mwh_full": [float(v) for v in e_full],
-                        "energy_mean_mwh_reduced": [float(v) for v in e_red]},
+                        "energy_mean_mwh_reduced": [float(v) for v in e_red],
+                        "peak_20y_mean_kw": {"full": p_full, "reduced": p_red}},
         "outputs": OUT,
     }
     with open(paths["summary"], "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
-    for key in ("demand_prob", "res_prob", "demand_det", "res_det", "summary"):
+    for key in OUT:
         print("wrote", OUT[key])
     print("weights:", summary["probabilistic"]["scenario_weights"])
 

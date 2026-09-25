@@ -1,0 +1,9 @@
+# dea2025k (2026-09-24): the zero-autonomy 12sc design, alone, after every other lane has finished.
+# Run with: bash run_linopy_lanes.sh queues/dea2025k_12sc_big.txt --memlimit 280 --softmem 260 \
+#     --threads 24 --size-timelimit 15000
+# 3 units won by a wide margin in dea2025c. Its certification uses the parallel-unit commitment, and its
+# integral re-solve stopped on the soft memory limit at 160 GB of Gurobi memory last time (peak RSS
+# 121 GB), so it gets most of the 325 GB session. The other designs of this file moved out to run beside
+# the 1-step lanes: fuel064 (dea2025k_12sc_extra.txt), 3-step (dea2025k_12sc_3step.txt) and 5-step
+# (dea2025k_12sc_5step.txt).
+P  gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025k_aut0        3          LINOPY_GEN_PARALLEL=1

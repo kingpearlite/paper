@@ -1,0 +1,8 @@
+# dea2025k (2026-09-24): a fourth lane beside dea2025k_12sc_lanes.txt, started once those three lanes
+# showed about 78 GB in use on the 325 GB session. fuel064 is a 1-step design like them (peak about
+# 55 GB in dea2025c); 3 units won by 0.78% in dea2025c, so both counts are sized, and the 3-unit
+# sizing is the long one (11,485 s at 24 threads in dea2025c). The Gurobi WLS licence allows four
+# sessions, so nothing else (the laptop included) may solve while four lanes run.
+# Run with: bash run_linopy_lanes.sh queues/dea2025k_12sc_extra.txt --memlimit 90 --softmem 80 \
+#     --threads 6 --size-timelimit 15000
+D  gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025k_fuel064     2|3

@@ -1,0 +1,8 @@
+# dea2025k (2026-09-24): the 12sc 3-step design, started beside the last two 1-step lanes once lane C of
+# dea2025k_12sc_lanes.txt and the fuel064 lane had finished (about 110 GB in use by the two lanes left).
+# The 2,2,2 pattern won in dea2025c (2,2,3 / 2,3,3 / 3,3,3 were stopped by the time limit with bounds
+# below it, a limitation the paper states); its sizing ran within MemLimit 100 and its certification
+# within 150 then.
+# Run with: bash run_linopy_lanes.sh queues/dea2025k_12sc_3step.txt --memlimit 150 --softmem 140 \
+#     --threads 8 --size-timelimit 15000
+S  gili_ketapang_12sc_20y_MILP_3step_dieselops_dea2025k             2,2,2

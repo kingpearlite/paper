@@ -1,0 +1,8 @@
+# dea2025k (2026-09-25): the 12sc growth-2018-23 design (_g24h) sized with 3 and 4 gensets, for the
+# paper's check that its two-unit choice is not a certification artifact (dea2025c: 3 and 4 units cost
+# 4.1% and 8.1% more than 2, sizing NPCs). The 2-unit sizing is in logs/lanes_dea2025k_12sc_lanes
+# (11,882,637.98 USD, optimal, gap 0.1075%, 978 s at 8 threads); sizing only, nothing to certify.
+# Run with: bash run_linopy_queue.sh queues/dea2025k_12sc_g24h_gens.txt --jobs 2 --memlimit 100 \
+#     --timelimit 15000
+gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025k_g24h     3
+gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025k_g24h     4

@@ -1,0 +1,10 @@
+# dea2025k (2026-09-25): a second 12sc _g24h sizing with 3 gensets, beside the one in
+# dea2025k_12sc_g24h_gens.txt. That run found its first design only after 5,871 s, 9.08% from the bound,
+# while the 4-unit run closed in 925 s. Gurobi is deterministic, so an identical copy would follow the
+# same path; this one is meant to run with LINOPY_MIPFOCUS=1 (effort on finding designs, not on the
+# bound), set in the shell of a tmux session the user starts, since the queue's own tmux passes only
+# PYTHON and LINOPY_MIPGAP. Expected optimum from the 4-unit result: the 2-unit design plus one idle
+# unit, about 12,333,500 USD (objective about 13,188,900), against the root bound 1.318196e7.
+# Run with: bash run_linopy_queue.sh queues/dea2025k_12sc_g24h_gen3b.txt --jobs 1 --memlimit 100 \
+#     --timelimit 15000
+gili_ketapang_12sc_20y_MILP_1step_dieselops_dea2025k_g24h     3

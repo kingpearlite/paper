@@ -1,0 +1,215 @@
+param: base_URL:= 'https://power.larc.nasa.gov/api/temporal/';  # Base URL for NASA POWER API data download
+param: loc_id := 'point';                                        # Location type for API query (point = single coordinate)
+param: parameters_1 := 'ALLSKY_SFC_SW_DWN';                     # NASA POWER variable: all-sky surface shortwave downwelling irradiance
+param: parameters_2 := 'T2MWET, T2M, WS50M';                    # NASA POWER variables: wet-bulb temp, air temp at 2m, wind speed at 50m
+param: parameters_3 := 'WS50M, WS2M,WD50M, T2M';               # NASA POWER variables: wind speed (50m, 2m), wind direction, air temp
+param: date_start := '20150101';                                 # Start date for historical climate data download (YYYYMMDD) -- dead while RE_Supply_Calculation=0 below
+param: date_end := '20201231';                                   # End date for historical climate data download (YYYYMMDD) -- dead while RE_Supply_Calculation=0 below
+param: community := 'RE';                                        # NASA POWER user community (RE = Renewable Energy)
+param: temp_res_1 := 'daily';                                    # Temporal resolution for solar irradiance data
+param: temp_res_2 := 'hourly';                                   # Temporal resolution for wind and temperature data
+param: output_format := 'JSON';                                  # API response format
+param: user := 'anonymous';                                      # Username for NASA POWER API access
+
+param: lat := '-7 40 44.17';  # Gili Ketapang latitude (DMS), from decimal -7.678937 (era5_gili_ketapang.ipynb), matches the source report's stated coordinate range
+param: lon := '113 15 36.93';   # Gili Ketapang longitude (DMS), from decimal 113.260259
+param: time_zone := +7;      # WIB (Western Indonesia Time, UTC+7) -- East Java is entirely within this zone
+
+param: nom_power := 330.0;             # Canadian Solar CS6X-325P module nameplate (Wp), per the source report's Tabel 8 -- was 1000.0 in the reference template
+param: tilt := 10.0;                   # PV panel tilt angle from horizontal (degrees) -- kept at template default, no site-specific mounting angle given in the report
+param: azim := 180.0;                  # PV panel azimuth angle (degrees; 180 = south-facing) -- kept at template default
+param: ro_ground := 0.2;               # Ground reflectance (albedo) for reflected irradiance on panel
+param: k_T := -0.37;                   # PV temperature coefficient of power (%/°C); negative = power drops with heat
+param: NMOT := 45.0;                   # Nominal module operating temperature (°C)
+param: T_NMOT := 20.0;                 # Ambient air temperature at NMOT test conditions (°C)
+param: G_NMOT := 800.0;                # Solar irradiance at NMOT test conditions (W/m²)
+param: turbine_type := 'Horizontal Axis';  # Wind turbine rotor type for power curve lookup -- unused, RES_Sources=1 (solar only) below; kept for format compatibility only
+param: turbine_model := 'Alstom.Eco.80';  # unused -- see RES_Sources=1 below (wind omitted: source report never measured or modelled it)
+param: drivetrain_efficiency := 0.9;       # unused, see above
+
+param: demand_growth := '5';        # DEAD: Demand_Profile_Generation=0 below means this archetype-model field is never read
+param: cooling_period := 'AY';     # DEAD, same reason
+param: h_tier1 := '252';           # DEAD, same reason -- all h_tier*/hospital_*/schools fields below are archetype-generation inputs, unused here
+param: h_tier2 := '160';
+param: h_tier3 := '50';
+param: h_tier4 := '36';
+param: h_tier5 := '5';
+param: schools := '1';
+param: hospital_1 := '0';
+param: hospital_2 := '1';
+param: hospital_3 := '0';
+param: hospital_4 := '0';
+param: hospital_5 := '0';
+
+param: Periods := 8760;                         # Number of time steps per year (8760 = hourly resolution)
+param: Years := 20;                             # Project planning horizon in years -- probabilistic 20y variant, built 2026-08-17 for direct comparison against the certified deterministic 20y result (Gili_Ketapang_Report Table 2)
+param: Step_Duration := 20;                      # 1 investment step(s): number of steps = ceil(Years / Step_Duration) (paper update 2026-09-11)
+param: Min_Last_Step_Duration := 1;             # Minimum allowed duration of the final investment step (years)
+param: StartDate := '01/01/2023 00:00:00';      # REVERTED from '01/01/2025' -- MicroGrids.py hardcodes PlotDate='01/01/2023' and computes PlotYear = PlotDate.year - StartDate.year + 1; a 2025 StartDate gave PlotYear=-1 and crashed DispatchPlot with a real KeyError. Matching every other site's convention avoids this entirely -- confirmed NOT cosmetic, my earlier assessment was wrong.
+param: Delta_Time := 1.0;                       # Duration of each time step (hours)
+param: Scenarios := 1;                          # deterministic demand scheme, _build_demand_merged.py (paper update)
+param: Scenario_Weight :=  # single deterministic scenario, Monte Carlo P50 growth path (merged_scenarios_gili_ketapang_kwh.json)
+1      1.000000;
+
+param: Real_Discount_Rate := 0.12;         # DEA 2024 catalogue WACC (CAPEX back-calculation from ESDM FIT, PDF p.61/p.195), used as real rate
+param: Investment_Cost_Limit := 500000.0;  # Inert while Optimization_Goal=1 below (verified: only consumed when Optimization_Goal==0) -- left unchanged, not a real constraint here
+
+param: Renewable_Penetration := 0.0;    # No minimum RES share imposed (was 0.3 in the reference template) -- deliberately removed so NPC-minimization alone decides the technology mix, since the point of this study is to find out whether/how much RES makes economic sense, not to assume an answer
+param: Renewables_Total_Area := 0.0;    # No land constraint (Land_Use=0 below means this is unenforced regardless)
+param: Battery_Independence := 1;       # 1 day of battery autonomy required -- kept as a sensible technical planning floor, not derived from the report
+
+param: Lost_Load_Fraction := 0.0;        # Fully reliable (no unmet demand allowed)
+param: Lost_Load_Specific_Cost := 0.0;   # Moot given Lost_Load_Fraction=0
+
+param: Solver := 0;  # Gurobi in practice (this project's comment claiming "0=GLPK" is stale -- every existing 6sc run uses Solver:=0 and logs "Calling GUROBI solver...", confirmed empirically)
+
+param: Optimization_Goal := 1;             # Minimize NPC (standard)
+param: MILP_Formulation := 1;              # MILP with integer units
+param: Generator_Partial_Load := 1;        # CONSOLIDATED DIESEL-OPS CORRECTION (2026-08-23): enabled, part of the combined corrected-diesel-operations baseline, applied to the 2-step capexp10 shape (see header)
+param: Multiobjective_Optimization := 0;   # Single-objective
+param: Greenfield_Investment := 0;         # BROWNFIELD (user decision): credits the existing 2x470kW diesel plant. Validated 2026-07-28 against the certified greenfield fixed-design result with all existing-capacity fields at 0 (bit-for-bit match) before being trusted here.
+param: Plot_Max_Cost := 0;
+param: RE_Supply_Calculation := 0;         # Pre-generated RES_Time_Series_1sc_gili_ketapang_merged_kwh.csv (_build_demand_merged.py), not a live per-run NASA fetch
+param: Demand_Profile_Generation := 0;     # Pre-generated Demand_1sc_20y_gili_ketapang_merged_kwh.csv (_build_demand_merged.py), not the archetype generator
+param: Grid_Connection := 0;               # No mainland grid connection -- confirmed isolated island system in the source report
+param: Grid_Availability_Simulation := 0;
+param: Grid_Connection_Type := 0;
+param: WACC_Calculation := 0;              # Flat Real_Discount_Rate used directly, not derived from equity/debt inputs
+param: Model_Components := 0;              # All components (RES+BESS+GEN)
+param: Land_Use := 0;
+
+
+
+param: Pareto_points := 2;    # Inert, Multiobjective_Optimization=0
+param: Pareto_solution := 1;  # Inert, same reason
+
+param: cost_of_equity := 0.12;  # Inert, WACC_Calculation=0
+param: cost_of_debt := 0.11;    # Inert, same reason
+param: tax := 0.02;             # Inert, same reason
+param: equity_share := 0.1;     # Inert, same reason
+param: debt_share := 0.9;       # Inert, same reason
+
+param: RES_Sources := 1;  # Solar PV only -- wind omitted (source report never measured or modelled a wind resource; mentioned as available via HOMER/NASA but zero data printed or used in any of its own scenarios)
+param: RES_Names :=
+1	'Solar PV'
+;
+param: RES_Nominal_Capacity :=  # Nominal capacity of one RES unit (kW)
+1	0.33
+;
+param: RES_Inverter_Efficiency :=  # DC-to-AC inverter efficiency
+1	0.98
+;
+param: RES_Specific_Area :=  # Land area per installed kW (m²/kW) -- no report figure; kept at the reference template's generic default for a similar-class panel
+1	11.49
+;
+param: RES_Specific_Investment_Cost :=  # DEA/MEMR Technology Data Indonesia 2024 p.70 PV industrial 100 kW, 2025 interp. of 1.08/0.76 M$/MWe (USD2022)  # SENSITIVITY: per-kWp (DC) cost, catalogue p.70 0.90/0.63 USD/Wp
+1	822.86
+;
+param: RES_Specific_OM_Cost :=  # p.70 fixed O&M 4,557 $/MWe/yr (2025) as fraction of capex
+1	0.004610
+;
+param: RES_Lifetime :=  # p.70 technical lifetime 27.86 y (2025), rounded (integer Param)
+1	28
+;
+param: RES_capacity :=  # Existing RES capacity, brownfield (kW) -- 0: no existing solar/wind at this site
+1	0.0
+;
+param: RES_existing_area :=  # Existing RES land footprint (m²) -- 0, same reason
+1	0.0
+;
+param: RES_years :=  # Age of existing RES at start of horizon (years) -- 0, same reason
+1	0.0
+;
+param: RES_unit_CO2_emission :=  # No report data; kept at 0 (matches reference template default)
+1	0.0
+;
+
+param: Battery_Specific_Investment_Cost := 430.00;    # DEA/MEMR Technology Data Indonesia 2024 p.265 Li-ion 4 h total investment, 2025 interp. of 0.47/0.33 MUSD/MWh (USD2022)
+param: Battery_Specific_Electronic_Investment_Cost := 79.64;    # Non-replaceable part = p.265 power component 318.57 $/kW (2025) / 4 h; excluded from the wear cost
+param: Battery_Specific_OM_Cost := 0.007973;    # p.265 fixed O&M 13,714 USD/MW/yr (2025) / 4 h = 3.43 $/kWh/yr, as fraction of 430 $/kWh
+param: Generator_Variable_OM_Cost := 0.00717;    # SENSITIVITY: catalogue p.225 diesel variable O&M, 2025 interp. of 7.30/6.84 USD/MWh
+param: Battery_Variable_OM_Cost := 0.001943;    # SENSITIVITY: catalogue p.265 Li-ion variable O&M per kWh discharged, 2025 interp. of 2.00/1.80 USD/MWh
+param: Battery_Discharge_Battery_Efficiency := 0.9517;    # sqrt of p.265 AC round-trip efficiency 90.57% (2025)
+param: Battery_Charge_Battery_Efficiency := 0.9517;    # sqrt of p.265 AC round-trip efficiency 90.57% (2025)
+param: Battery_Depth_of_Discharge := 0.8;                      # 20% min SOC, matches the report's Tabel 7 exactly
+param: Maximum_Battery_Discharge_Time := 4.0;    # p.265 discharge time, matches the 4 h cost basis
+param: Maximum_Battery_Charge_Time := 4.0;    # p.265 discharge time, matches the 4 h cost basis
+param: Battery_Cycles := 8214.0;    # p.265 technical lifetime in cycles, 2025 interp. of 7,500/10,000
+param: Battery_Initial_SOC := 1.0;
+param: Battery_capacity := 0.0;                                # No existing battery at this site (brownfield credit applies only to the diesel plant)
+param: BESS_unit_CO2_emission := 0.0;
+
+param: Battery_Nominal_Capacity_milp := 1.0;
+
+param: Generator_Types := 1;
+param: Fuel_Specific_Cost_Calculation := 0;
+param: Fuel_Specific_Cost_Import := 0;
+param: Generator_Names :=
+1	'Diesel Genset 1'
+;
+param: Generator_Efficiency :=  # CORRECTED (2026-08-23): real Cummins QSK23-G3 electrical efficiency, derived from the manufacturer fuel-consumption-vs-load table (references/Spec/QSK23-G3.pdf) via kWe/(fuel_Lph x Fuel_LHV) at Prime 100% load (648 kWe / (161 L/h x 10.14 kWh/L) = 39.7%). Cross-validated against Standby (39.9%) and Continuous (38.7%) ratings independently -- was 0.3, an unsourced reference-template default.  # SENSITIVITY: fuel curve B (470 kW rating, fixed 19 kWm fan/aux)
+1	0.3874
+;
+param: Generator_Specific_Investment_Cost :=  # DEA/MEMR Technology Data Indonesia 2024 p.225 diesel engine (fuel oil), 0.91 M$/MWe 2023 and 2030 (USD2022)
+1	910.00
+;
+param: Generator_Specific_OM_Cost :=  # p.225 fixed O&M 9,120 $/MWe/yr as fraction of capex; variable O&M 7.17 $/MWh has no model field, omitted
+1	0.010022
+;
+param: Generator_Lifetime :=  # p.225 technical lifetime
+1	25
+;
+param: Fuel_Names :=
+1	'Diesel'
+;
+param: Fuel_LHV :=  # No report figure; kept at reference template default (a standard published diesel LHV value)
+1	10.14
+;
+param: Fuel_Specific_Start_Cost := 0.6429;    # SENSITIVITY: fuel 0.6429 USD/L, 25% below the base 0.8573 USD/L
+param: Fuel_Specific_Cost_Rate :=  # No escalation data; flat price assumed
+1	0.0
+;
+param: Generator_capacity :=  # CORRECTED (2026-08-23): both existing 470kW units credited (940kW total) -- the station operator confirmed (22 Aug 2026) the two units CAN be synchronized and are operated in parallel specifically to avoid load shedding, superseding the earlier one-active-one-standby assumption (see Open Items for the full derivation).
+1	940.0
+;
+param: GEN_years :=  # Age of the existing gensets at the start of the 2026 horizon. 9 years: both 470 kW units in service since May 2017 (Falfi 2025, ITB thesis). Corrected 2026-09-18 from an unconfirmed 5-year placeholder; enters only the salvage value, as a constant, so no sizing decision changes.
+1	9.0
+;
+param: GEN_unit_CO2_emission :=  # No report data; kept at 0 (matches reference template default)
+1	0.0
+;
+param: FUEL_unit_CO2_emission :=
+1	2.68
+;
+param: Generator_Min_output :=  # 25% minimum load ratio, from the report's Tabel 6 (was 0.3 in the reference template)
+1	0.25
+;
+param: Generator_Nominal_Capacity_milp :=  # CORRECTED (2026-08-23): matches the real installed unit size (Tabel 3, PLN report: both existing gensets are 470kW Cummins QSK23-G3/Stamford HCI634H1 units) -- was 5kW, an arbitrary reference-template sizing-resolution default with no physical basis. Also required for Generator_Units_Total to represent genuine unit-commitment decisions rather than an accounting artifact (see Constraints.py fix, 2026-08-22).
+1	470.0
+;
+param: Generator_pgen :=  # 0.05, fitted 2026-08-23 from the same Cummins QSK23-G3 measured fuel curve as Generator_Efficiency above (F0=7.99, F1=0.2174 L/h vs kWm; pgen=F0/F_100%); was 0.01 unsourced placeholder, dormant while Partial_Load=0  # SENSITIVITY: fuel curve B (470 kW rating, fixed 19 kWm fan/aux)
+1	0.1014
+;
+
+param: Year_Grid_Connection := 1;                   # Inert, Grid_Connection=0
+param: Grid_Sold_El_Price := 0;
+param: Grid_Purchased_El_Price := 0.138;
+param: Grid_Distance := 0.5;
+param: Grid_Connection_Cost := 14000;
+param: Grid_Maintenance_Cost := 0.025;
+param: Maximum_Grid_Power := 80;
+param: Grid_Average_Number_Outages := 43.48;
+param: Grid_Average_Outage_Duration := 455;
+param: National_Grid_Specific_CO2_emissions := 0.1495;
+
+param: RES_Colors :=
+1	'FF8800'
+;
+param: Battery_Color := '4CC9F0';
+param: Generator_Colors :=
+1	'00509D'
+;
+param: Lost_Load_Color := 'F21B3F';
+param: Curtailment_Color := 'FFD500';
+param: Energy_To_Grid_Color := '008000';
+param: Energy_From_Grid_Color := '800080';

@@ -15,6 +15,7 @@ A design that passes is NOT proven feasible: certify it.
 
     python _check_ensemble_soc_bound.py                       # the default designs below
     python _check_ensemble_soc_bound.py --design NAME RES_UNITS BATTERY_KWH GEN_UNITS [--design ...]
+    python _check_ensemble_soc_bound.py --suffix _kwh --design ...   # the dea2025k inputs (2026-09-25)
 """
 import argparse
 import json
@@ -35,13 +36,17 @@ DEFAULT_DESIGNS = [
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--design", nargs=4, action="append", metavar=("NAME", "RES_UNITS", "BATTERY_KWH", "GEN_UNITS"))
+    # MGPY_MERGED_SUFFIX of _build_demand_merged.py, e.g. _kwh for the dea2025k family (default: the
+    # unsuffixed dea2025c inputs, so every logged run reproduces).
+    ap.add_argument("--suffix", default="")
     args = ap.parse_args()
     designs = [(n, int(r), float(b), int(g)) for n, r, b, g in args.design] if args.design else DEFAULT_DESIGNS
 
-    manifest = json.load(open(INP / "merged_scenarios_gili_ketapang.json"))
+    manifest = json.load(open(INP / f"merged_scenarios_gili_ketapang{args.suffix}.json"))
     unit_kw, inv_eff = manifest["settings"]["res_unit_kw"], manifest["settings"]["res_inverter_eff"]
-    dem = pd.read_csv(INP / "Demand_12sc_20y_gili_ketapang_merged.csv", sep=";", decimal=",", index_col=0)
-    res = pd.read_csv(INP / "RES_Time_Series_12sc_gili_ketapang_merged.csv", index_col=0)
+    dem = pd.read_csv(INP / f"Demand_12sc_20y_gili_ketapang_merged{args.suffix}.csv", sep=";", decimal=",",
+                      index_col=0)
+    res = pd.read_csv(INP / f"RES_Time_Series_12sc_gili_ketapang_merged{args.suffix}.csv", index_col=0)
     T, S, Y = 8760, res.shape[1], dem.shape[1] // res.shape[1]
     D = dem.to_numpy().reshape(T, S, Y)                  # MicroGridsPy column (s-1)*Y + y
     pv_per_kw = res.to_numpy() * inv_eff / unit_kw        # kW AC per kW installed
